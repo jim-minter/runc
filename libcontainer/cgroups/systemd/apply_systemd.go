@@ -288,7 +288,14 @@ func (m *Manager) Apply(pid int) error {
 		}
 	}
 
-	if _, err := theConn.StartTransientUnit(unitName, "replace", properties, nil); err != nil && !isUnitExists(err) {
+	ch := make(chan string, 1)
+	_, err := theConn.StartTransientUnit(unitName, "replace", properties, ch)
+	switch {
+	case err == nil:
+		// wait for systemd start job to complete
+		<-ch
+	case isUnitExists(err):
+	default:
 		return err
 	}
 
@@ -318,7 +325,12 @@ func (m *Manager) Destroy() error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	theConn.StopUnit(getUnitName(m.Cgroups), "replace", nil)
+	ch := make(chan string, 1)
+	_, err := theConn.StopUnit(getUnitName(m.Cgroups), "replace", ch)
+	if err != nil {
+		return err
+	}
+	<-ch
 	if err := cgroups.RemovePaths(m.Paths); err != nil {
 		return err
 	}
